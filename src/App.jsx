@@ -5,8 +5,6 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ */
 /* sig2noise — pick 3 things for the next 18 hours. The rest is noise. */
-/* Signed out: saves to this device (localStorage).                    */
-/* Signed in:  syncs live across devices via Firestore.                */
 /* ------------------------------------------------------------------ */
 
 const LOCAL_KEY = "sig2noise-v1";
@@ -21,6 +19,14 @@ const localDate = () => {
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 
 const freshState = () => ({ date: localDate(), signal: [], noise: [], history: [] });
+
+const loadLocal = () => {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
+  } catch (e) {
+    return null;
+  }
+};
 
 /* Roll the day over: archive yesterday's score, carry unfinished signals into noise */
 const normalize = (raw) => {
@@ -42,31 +48,33 @@ const normalize = (raw) => {
   };
 };
 
+const ERR_HELP = {
+  "permission-denied":
+    "Firestore rejected the request — publish the sig2noise rules block in Firebase → Firestore → Rules.",
+  unavailable: "Can't reach Firestore — check your connection.",
+};
+
 export default function App() {
-  const [user, setUser] = useState(undefined); // undefined = auth still resolving
+  const [user, setUser] = useState(undefined);
   const [state, setState] = useState(null);
   const [input, setInput] = useState("");
   const [flash, setFlash] = useState(false);
-  const [syncErr, setSyncErr] = useState(false);
+  const [syncErr, setSyncErr] = useState(null); // string error code or null
   const [drag, setDrag] = useState(null);
   const [dropHint, setDropHint] = useState(null);
   const saveTimer = useRef(null);
   const dragRef = useRef(null);
   const lastSaved = useRef("");
 
-  /* ---------------- auth ---------------- */
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u ?? null)), []);
 
-  /* ---------------- load: Firestore when signed in, localStorage otherwise ---- */
+  /* load: Firestore when signed in, localStorage otherwise */
   useEffect(() => {
     if (user === undefined) return;
     setState(null);
+    setSyncErr(null);
     if (!user) {
-      let raw = null;
-      try {
-        raw = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null");
-      } catch (e) { /* corrupt or empty — start fresh */ }
-      setState(normalize(raw));
+      setState(normalize(loadLocal()));
       return;
     }
     const ref = doc(db, "sig2noise", user.uid);
@@ -79,14 +87,18 @@ export default function App() {
           lastSaved.current = json;
           setState(incoming);
         }
-        setSyncErr(false);
+        setSyncErr(null);
       },
-      () => setSyncErr(true)
+      (err) => {
+        // Never hang on "tuning in…" — fall back to local data and say what broke.
+        setSyncErr(err?.code || "unknown");
+        setState((prev) => prev ?? normalize(loadLocal()));
+      }
     );
     return unsub;
   }, [user]);
 
-  /* ---------------- debounced save ---------------- */
+  /* debounced save */
   useEffect(() => {
     if (!state || user === undefined) return;
     const json = JSON.stringify(state);
@@ -94,21 +106,20 @@ export default function App() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       lastSaved.current = json;
+      localStorage.setItem(LOCAL_KEY, json); // always keep a local copy
       if (user) {
         try {
           await setDoc(doc(db, "sig2noise", user.uid), state);
-          setSyncErr(false);
+          setSyncErr(null);
         } catch (e) {
-          setSyncErr(true);
+          setSyncErr(e?.code || "unknown");
         }
-      } else {
-        localStorage.setItem(LOCAL_KEY, json);
       }
     }, 400);
     return () => clearTimeout(saveTimer.current);
   }, [state, user]);
 
-  /* ---------------- mutations ---------------- */
+  /* mutations */
   const rejectFull = () => {
     setFlash(true);
     setTimeout(() => setFlash(false), 500);
@@ -156,7 +167,7 @@ export default function App() {
   const promote = (id) => moveItem(id, "signal", null);
   const demote = (id) => moveItem(id, "noise", 0);
 
-  /* ---------------- pointer drag (mouse + touch) ---------------- */
+  /* pointer drag (mouse + touch) */
   const startDrag = (e, item, from) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -190,12 +201,10 @@ export default function App() {
     setDropHint(null);
   };
 
-  /* ---------------- render ---------------- */
   if (user === undefined || !state) {
     return (
-      <div style={sx.app}>
-        <style>{css}</style>
-        <div style={{ ...sx.mono, color: "#7C8799", padding: 40 }}>tuning in…</div>
+      <div className="app">
+        <div className="loading mono">tuning in…</div>
       </div>
     );
   }
@@ -213,157 +222,173 @@ export default function App() {
   ];
 
   return (
-    <div style={sx.app} onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
-      <style>{css}</style>
-
-      {/* ---------- top bar: sync status + auth ---------- */}
-      <div style={sx.topBar}>
-        <span style={{ ...sx.mono, fontSize: 10, letterSpacing: "0.14em", color: syncErr ? "#E4574B" : "#4A566B" }}>
-          {user ? (syncErr ? "SYNC ERROR — CHECK RULES" : "SYNCED · " + (user.displayName?.split(" ")[0] || "").toUpperCase()) : "THIS DEVICE ONLY"}
-        </span>
-        {user ? (
-          <button style={sx.authBtn} onClick={() => signOut(auth)}>Sign out</button>
-        ) : (
-          <button style={sx.authBtn} onClick={() => signInWithPopup(auth, googleProvider).catch(() => setSyncErr(true))}>
-            Sign in to sync
-          </button>
-        )}
-      </div>
-
-      {/* ---------- header ---------- */}
-      <header style={sx.header}>
-        <div>
-          <div style={sx.eyebrow}>
-            <span style={{ ...sx.dot, background: allSet ? "#FFB224" : "#3A4557" }} className={allSet ? "pulse" : ""} />
-            {allSet ? "ON AIR" : "CHOOSE YOUR 3"}
-          </div>
-          <h1 style={sx.title}>SIGNAL</h1>
-          <div style={sx.sub}>{dateLabel} · next 18 hours</div>
+    <div className="app" onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+      <div className="frame">
+        {/* top status bar */}
+        <div className="topbar">
+          <span className={"pill mono " + (syncErr ? "pill-err" : "")}>
+            {user
+              ? syncErr
+                ? "SYNC ERROR"
+                : "SYNCED · " + (user.displayName?.split(" ")[0] || "").toUpperCase()
+              : "THIS DEVICE ONLY"}
+          </span>
+          {user ? (
+            <button className="authbtn mono" onClick={() => signOut(auth)}>
+              Sign out
+            </button>
+          ) : (
+            <button
+              className="authbtn mono"
+              onClick={() => signInWithPopup(auth, googleProvider).catch((e) => setSyncErr(e?.code || "auth"))}
+            >
+              Sign in to sync
+            </button>
+          )}
         </div>
 
-        <div style={sx.vuWrap} aria-label={`${cleared} of 3 signals cleared`}>
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              style={{
-                ...sx.vuSeg,
-                background: state.signal[i]?.done ? "#FFB224" : state.signal[i] ? "#3E3116" : "#242D3D",
-                boxShadow: state.signal[i]?.done ? "0 0 14px rgba(255,178,36,.45)" : "none",
-              }}
+        {syncErr && (
+          <div className="errbar mono">
+            {ERR_HELP[syncErr] || `Sync error (${syncErr}) — working from this device's copy.`}
+          </div>
+        )}
+
+        {/* header */}
+        <header className="header">
+          <div>
+            <div className="eyebrow mono">
+              <span className={"lamp " + (allSet ? "lamp-on" : "")} />
+              {allSet ? "ON AIR" : "CHOOSE YOUR 3"}
+            </div>
+            <h1 className="wordmark">
+              SIG<span className="wordmark-slash">/</span>NOISE
+            </h1>
+            <div className="sub mono">{dateLabel} · next 18 hours</div>
+          </div>
+
+          <div className="vu" aria-label={`${cleared} of 3 signals cleared`}>
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className={
+                  "vuseg " +
+                  (state.signal[i]?.done ? "vuseg-lit" : state.signal[i] ? "vuseg-armed" : "")
+                }
+              />
+            ))}
+            <div className="vulabel mono">{cleared}/3 CLEARED</div>
+          </div>
+        </header>
+
+        {/* signal zone */}
+        <section
+          data-zone="signal"
+          className={
+            "panel signalzone " +
+            (flash ? "shake flash-err " : "") +
+            (dropHint?.list === "signal" ? "droptarget" : "")
+          }
+        >
+          <div className="zonehead mono">
+            <span>SIGNAL</span>
+            <span className="zonehead-dim">what gets the sharpest version of you</span>
+          </div>
+          {state.signal.map((item, idx) => (
+            <Row
+              key={item.id}
+              item={item}
+              index={idx}
+              zone="signal"
+              rank={idx + 1}
+              dragging={drag?.id === item.id}
+              hint={dropHint?.list === "signal" && dropHint?.index === idx}
+              onToggle={toggleDone}
+              onRemove={removeItem}
+              onDemote={demote}
+              startDrag={startDrag}
             />
           ))}
-          <div style={{ ...sx.mono, fontSize: 11, color: "#7C8799", marginTop: 6 }}>{cleared}/3 cleared</div>
-        </div>
-      </header>
+          {state.signal.length < 3 &&
+            Array.from({ length: 3 - state.signal.length }).map((_, i) => (
+              <div key={i} className="emptyslot">
+                <span className="slotnum mono">{state.signal.length + i + 1}</span>
+                <span className="mono slottext">open slot — promote what actually moves things</span>
+              </div>
+            ))}
+        </section>
 
-      {/* ---------- signal zone ---------- */}
-      <section
-        data-zone="signal"
-        style={{
-          ...sx.signalZone,
-          borderColor: flash ? "#E4574B" : dropHint?.list === "signal" ? "#FFB224" : "#2B3548",
-        }}
-        className={flash ? "shake" : ""}
-      >
-        {state.signal.map((item, idx) => (
-          <Row
-            key={item.id}
-            item={item}
-            index={idx}
-            zone="signal"
-            rank={idx + 1}
-            dragging={drag?.id === item.id}
-            hint={dropHint?.list === "signal" && dropHint?.index === idx}
-            onToggle={toggleDone}
-            onRemove={removeItem}
-            onDemote={demote}
-            startDrag={startDrag}
-          />
-        ))}
-        {state.signal.length < 3 &&
-          Array.from({ length: 3 - state.signal.length }).map((_, i) => (
-            <div key={i} style={sx.emptySlot}>
-              <span style={{ ...sx.mono, color: "#4A566B", fontSize: 12 }}>
-                open slot — drag something up that actually moves things
-              </span>
-            </div>
-          ))}
-      </section>
-
-      {/* ---------- noise zone ---------- */}
-      <section
-        data-zone="noise"
-        style={{ ...sx.noiseZone, outline: dropHint?.list === "noise" ? "1px dashed #7C8799" : "none" }}
-      >
-        <div style={sx.noiseHead}>
-          <span style={{ ...sx.mono, letterSpacing: "0.18em", fontSize: 11, color: "#7C8799" }}>
-            NOISE — it can wait
-          </span>
-          <span style={{ ...sx.mono, fontSize: 11, color: "#4A566B" }}>{state.noise.length}</span>
-        </div>
-
-        <div style={sx.inputRow}>
-          <input
-            style={sx.input}
-            value={input}
-            placeholder="Everything lands here first…"
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addItem()}
-          />
-          <button style={sx.addBtn} onClick={addItem}>Add</button>
-        </div>
-
-        {state.noise.length === 0 && (
-          <div style={{ ...sx.mono, color: "#4A566B", fontSize: 12, padding: "14px 4px" }}>
-            Quiet. Capture asks, fires and "quick things" here — then decide.
+        {/* noise zone */}
+        <section
+          data-zone="noise"
+          className={"noisezone " + (dropHint?.list === "noise" ? "droptarget-noise" : "")}
+        >
+          <div className="zonehead mono">
+            <span className="zonehead-noise">NOISE</span>
+            <span className="zonehead-dim">
+              it can wait · <b>{state.noise.length}</b>
+            </span>
           </div>
-        )}
 
-        {state.noise.map((item, idx) => (
-          <Row
-            key={item.id}
-            item={item}
-            index={idx}
-            zone="noise"
-            dragging={drag?.id === item.id}
-            hint={dropHint?.list === "noise" && dropHint?.index === idx}
-            onToggle={toggleDone}
-            onRemove={removeItem}
-            onPromote={promote}
-            startDrag={startDrag}
-          />
-        ))}
-      </section>
+          <div className="inputrow">
+            <input
+              className="input"
+              value={input}
+              placeholder="Everything lands here first…"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addItem()}
+            />
+            <button className="addbtn" onClick={addItem}>
+              ADD
+            </button>
+          </div>
 
-      {/* ---------- 7-day strip ---------- */}
-      <footer style={sx.footer}>
-        <div style={{ ...sx.mono, fontSize: 11, color: "#7C8799", letterSpacing: "0.18em", marginBottom: 10 }}>
-          LAST 7 DAYS
-        </div>
-        <div style={sx.stripRow}>
-          {strip.map((d, i) => (
-            <div key={i} style={sx.stripDay} title={`${d.date}: ${d.done}/${d.total || 3}`}>
-              <div style={sx.stripBars}>
-                {[2, 1, 0].map((seg) => (
-                  <div
-                    key={seg}
-                    style={{
-                      ...sx.stripSeg,
-                      background: d.done > seg ? "#FFB224" : "#242D3D",
-                      opacity: d.today ? 1 : 0.75,
-                    }}
-                  />
-                ))}
-              </div>
-              <div style={{ ...sx.mono, fontSize: 9, color: d.today ? "#E8ECF3" : "#4A566B" }}>
-                {d.today ? "now" : d.date.slice(5)}
-              </div>
+          {state.noise.length === 0 && (
+            <div className="quiet mono">
+              Quiet. Capture asks, fires and "quick things" here — then decide.
             </div>
-          ))}
-        </div>
-      </footer>
+          )}
 
-      {drag && <div style={{ ...sx.ghost, left: drag.x + 10, top: drag.y - 18 }}>{drag.text}</div>}
+          {state.noise.map((item, idx) => (
+            <Row
+              key={item.id}
+              item={item}
+              index={idx}
+              zone="noise"
+              dragging={drag?.id === item.id}
+              hint={dropHint?.list === "noise" && dropHint?.index === idx}
+              onToggle={toggleDone}
+              onRemove={removeItem}
+              onPromote={promote}
+              startDrag={startDrag}
+            />
+          ))}
+        </section>
+
+        {/* 7-day strip */}
+        <footer className="footer">
+          <div className="footlabel mono">LAST 7 DAYS</div>
+          <div className="striprow">
+            {strip.map((d, i) => (
+              <div key={i} className="stripday" title={`${d.date}: ${d.done}/${d.total || 3}`}>
+                <div className="stripbars">
+                  {[2, 1, 0].map((seg) => (
+                    <div key={seg} className={"stripseg " + (d.done > seg ? "stripseg-lit" : "")} />
+                  ))}
+                </div>
+                <div className={"stripdate mono " + (d.today ? "stripdate-today" : "")}>
+                  {d.today ? "now" : d.date.slice(5)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </footer>
+      </div>
+
+      {drag && (
+        <div className="ghost" style={{ left: drag.x + 12, top: drag.y - 20 }}>
+          {drag.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -377,187 +402,47 @@ function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPr
       data-row-id={item.id}
       data-zone-name={zone}
       data-index={index}
-      style={{
-        ...sx.row,
-        opacity: dragging ? 0.35 : item.done && !isSignal ? 0.5 : 1,
-        borderTop: hint ? "2px solid #FFB224" : isSignal ? "1px solid #2B3548" : "1px dashed #2B3548",
-      }}
+      className={
+        "row " +
+        (isSignal ? "row-signal " : "row-noise ") +
+        (dragging ? "row-dragging " : "") +
+        (hint ? "row-hint " : "") +
+        (item.done ? "row-done " : "")
+      }
     >
-      <span style={sx.handle} onPointerDown={(e) => startDrag(e, item, zone)} aria-label="Drag to reorder">
+      <span className="handle" onPointerDown={(e) => startDrag(e, item, zone)} aria-label="Drag to reorder">
         ⠿
       </span>
 
-      {isSignal && <span style={sx.rank}>{rank}</span>}
+      {isSignal && <span className={"rankchip mono " + (item.done ? "rankchip-lit" : "")}>{rank}</span>}
 
       <button
         onClick={() => onToggle(item.id)}
-        style={{
-          ...sx.check,
-          borderColor: item.done ? "#FFB224" : "#4A566B",
-          background: item.done ? "#FFB224" : "transparent",
-          color: item.done ? "#171D28" : "transparent",
-        }}
+        className={"check " + (item.done ? "check-on" : "")}
         aria-label={item.done ? "Mark not done" : "Mark done"}
       >
         ✓
       </button>
 
-      <span
-        style={{
-          ...(isSignal ? sx.textSignal : sx.textNoise),
-          textDecoration: item.done ? "line-through" : "none",
-        }}
-      >
+      <span className={"text " + (isSignal ? "text-signal" : "text-noise")}>
         {item.text}
-        {item.carried && <span style={sx.carried}> · carried over</span>}
+        {item.carried && <span className="carried mono"> · carried over</span>}
       </span>
 
-      <div style={sx.rowBtns}>
+      <div className="rowbtns">
         {isSignal ? (
-          <button style={sx.miniBtn} onClick={() => onDemote(item.id)} title="Back to noise">▾</button>
+          <button className="minibtn" onClick={() => onDemote(item.id)} title="Back to noise">
+            ▾
+          </button>
         ) : (
-          <button style={sx.miniBtn} onClick={() => onPromote(item.id)} title="Make it a signal">▴</button>
+          <button className="minibtn minibtn-up" onClick={() => onPromote(item.id)} title="Make it a signal">
+            ▴
+          </button>
         )}
-        <button style={{ ...sx.miniBtn, color: "#5A6478" }} onClick={() => onRemove(item.id)} title="Delete">×</button>
+        <button className="minibtn minibtn-del" onClick={() => onRemove(item.id)} title="Delete">
+          ×
+        </button>
       </div>
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-const MONO = "'IBM Plex Mono', ui-monospace, monospace";
-const DISPLAY = "'Archivo', system-ui, sans-serif";
-
-const sx = {
-  app: {
-    minHeight: "100vh",
-    background: "#171D28",
-    color: "#E8ECF3",
-    fontFamily: DISPLAY,
-    maxWidth: 640,
-    margin: "0 auto",
-    padding: "16px 18px 60px",
-    touchAction: "pan-y",
-  },
-  mono: { fontFamily: MONO },
-  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
-  authBtn: {
-    background: "transparent",
-    border: "1px solid #2B3548",
-    color: "#7C8799",
-    borderRadius: 6,
-    padding: "5px 10px",
-    fontSize: 11,
-    fontFamily: MONO,
-    cursor: "pointer",
-  },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 26 },
-  eyebrow: {
-    fontFamily: MONO,
-    fontSize: 11,
-    letterSpacing: "0.22em",
-    color: "#7C8799",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  dot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
-  title: { fontSize: 44, fontWeight: 900, letterSpacing: "0.04em", margin: "6px 0 2px", lineHeight: 1 },
-  sub: { fontFamily: MONO, fontSize: 12, color: "#7C8799" },
-  vuWrap: { display: "flex", flexDirection: "column", alignItems: "flex-end", paddingTop: 6 },
-  vuSeg: { width: 46, height: 10, borderRadius: 2, marginBottom: 5, transition: "background .3s" },
-
-  signalZone: {
-    border: "1px solid #2B3548",
-    borderRadius: 10,
-    background: "#1F2735",
-    padding: "6px 0",
-    marginBottom: 22,
-    transition: "border-color .2s",
-  },
-  emptySlot: { padding: "16px 16px", borderTop: "1px dashed #2B3548", minHeight: 24 },
-
-  noiseZone: { borderRadius: 10, padding: "2px 2px 8px" },
-  noiseHead: { display: "flex", justifyContent: "space-between", padding: "0 4px 10px" },
-  inputRow: { display: "flex", gap: 8, marginBottom: 8 },
-  input: {
-    flex: 1,
-    background: "#1F2735",
-    border: "1px solid #2B3548",
-    borderRadius: 8,
-    color: "#E8ECF3",
-    padding: "11px 12px",
-    fontSize: 16,
-    fontFamily: DISPLAY,
-    outline: "none",
-  },
-  addBtn: {
-    background: "#FFB224",
-    color: "#171D28",
-    border: "none",
-    borderRadius: 8,
-    padding: "0 18px",
-    fontWeight: 700,
-    fontFamily: DISPLAY,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-
-  row: { display: "flex", alignItems: "center", gap: 10, padding: "12px 12px" },
-  handle: { cursor: "grab", color: "#4A566B", fontSize: 15, touchAction: "none", userSelect: "none", padding: "4px 2px" },
-  rank: { fontFamily: MONO, color: "#FFB224", fontSize: 13, width: 14, textAlign: "center" },
-  check: {
-    width: 22,
-    height: 22,
-    minWidth: 22,
-    borderRadius: "50%",
-    border: "1.5px solid",
-    fontSize: 12,
-    lineHeight: 1,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all .15s",
-  },
-  textSignal: { flex: 1, fontSize: 16, fontWeight: 600, lineHeight: 1.35 },
-  textNoise: { flex: 1, fontSize: 14, color: "#8C96A6", lineHeight: 1.35 },
-  carried: { fontFamily: MONO, fontSize: 10, color: "#7A5A1E" },
-  rowBtns: { display: "flex", gap: 2 },
-  miniBtn: { background: "transparent", border: "none", color: "#7C8799", fontSize: 16, cursor: "pointer", padding: "2px 6px" },
-
-  footer: { marginTop: 34, borderTop: "1px solid #2B3548", paddingTop: 16 },
-  stripRow: { display: "flex", gap: 10 },
-  stripDay: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
-  stripBars: { display: "flex", flexDirection: "column", gap: 2 },
-  stripSeg: { width: 22, height: 6, borderRadius: 1 },
-
-  ghost: {
-    position: "fixed",
-    zIndex: 50,
-    background: "#2B3548",
-    border: "1px solid #FFB224",
-    color: "#E8ECF3",
-    padding: "6px 10px",
-    borderRadius: 6,
-    fontSize: 13,
-    maxWidth: 220,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
-    boxShadow: "0 6px 20px rgba(0,0,0,.4)",
-  },
-};
-
-const css = `
-* { box-sizing: border-box; }
-body { margin: 0; background: #171D28; }
-input::placeholder { color: #4A566B; }
-button:focus-visible, input:focus-visible, span:focus-visible { outline: 2px solid #FFB224; outline-offset: 2px; }
-.pulse { animation: pulse 2s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-.shake { animation: shake .4s; }
-@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
-@media (prefers-reduced-motion: reduce) { .pulse, .shake { animation: none; } }
-`;
