@@ -216,7 +216,7 @@ export default function App() {
   if (user === undefined || !state) {
     return (
       <div className="app">
-        <div className="loading mono">tuning in…</div>
+        <div className="loading mono">TUNING IN…</div>
       </div>
     );
   }
@@ -235,28 +235,45 @@ export default function App() {
 
   return (
     <div className="app" onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+      {/* scrolling ticker */}
+      <div className="ticker">
+        <div className="ticker-track mono">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <span key={i}>
+              PROTECT THE SIGNAL&nbsp;&nbsp;·&nbsp;&nbsp;3 THINGS&nbsp;&nbsp;·&nbsp;&nbsp;NEXT 18
+              HOURS&nbsp;&nbsp;·&nbsp;&nbsp;EVERYTHING ELSE CAN WAIT&nbsp;&nbsp;·&nbsp;&nbsp;
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="frame">
-        {/* top status bar */}
-        <div className="topbar">
-          <span className={"pill mono " + (syncErr ? "pill-err" : "")}>
-            {user
-              ? syncErr
-                ? "SYNC ERROR"
-                : "SYNCED · " + (user.displayName?.split(" ")[0] || "").toUpperCase()
-              : "THIS DEVICE ONLY"}
+        {/* meta row */}
+        <div className="metarow mono">
+          <span>{dateLabel.toUpperCase()}</span>
+          <span className="metarow-right">
+            <span className={"status " + (syncErr ? "status-err" : "")}>
+              {user
+                ? syncErr
+                  ? "SYNC ERROR"
+                  : "● SYNCED — " + (user.displayName?.split(" ")[0] || "").toUpperCase()
+                : "○ THIS DEVICE ONLY"}
+            </span>
+            {user ? (
+              <button className="linkbtn mono" onClick={() => signOut(auth)}>
+                SIGN OUT
+              </button>
+            ) : (
+              <button
+                className="linkbtn mono"
+                onClick={() =>
+                  signInWithPopup(auth, googleProvider).catch((e) => setSyncErr(e?.code || "auth"))
+                }
+              >
+                SIGN IN TO SYNC
+              </button>
+            )}
           </span>
-          {user ? (
-            <button className="authbtn mono" onClick={() => signOut(auth)}>
-              Sign out
-            </button>
-          ) : (
-            <button
-              className="authbtn mono"
-              onClick={() => signInWithPopup(auth, googleProvider).catch((e) => setSyncErr(e?.code || "auth"))}
-            >
-              Sign in to sync
-            </button>
-          )}
         </div>
 
         {syncErr && (
@@ -265,46 +282,34 @@ export default function App() {
           </div>
         )}
 
-        {/* header */}
-        <header className="header">
-          <div>
-            <div className="eyebrow mono">
-              <span className={"lamp " + (allSet ? "lamp-on" : "")} />
-              {allSet ? "ON AIR" : "CHOOSE YOUR 3"}
-            </div>
-            <h1 className="wordmark">
-              SIG<span className="wordmark-slash">/</span>NOISE
-            </h1>
-            <div className="sub mono">{dateLabel} · next 18 hours</div>
-          </div>
-
-          <div className="vu" aria-label={`${cleared} of 3 signals cleared`}>
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className={
-                  "vuseg " +
-                  (state.signal[i]?.done ? "vuseg-lit" : state.signal[i] ? "vuseg-armed" : "")
-                }
-              />
-            ))}
-            <div className="vulabel mono">{cleared}/3 CLEARED</div>
-          </div>
+        {/* masthead */}
+        <header className="masthead">
+          <h1 className="display">
+            <span className="display-solid">SIGNAL</span>
+            <span className="display-outline">/NOISE</span>
+          </h1>
+          <p className="tagline">
+            <em>The company will take as much of you as you give it.</em> Choose what gets the
+            sharpest version of you — for the next <em>eighteen hours</em>.
+          </p>
         </header>
 
-        {/* signal zone */}
+        {/* waveform divider — fills amber as signals clear */}
+        <Waveform cleared={cleared} allSet={allSet} />
+
+        {/* THE SIGNAL */}
         <section
           data-zone="signal"
           className={
-            "panel signalzone " +
-            (flash ? "shake flash-err " : "") +
-            (dropHint?.list === "signal" ? "droptarget" : "")
+            "zone " + (flash ? "shake " : "") + (dropHint?.list === "signal" ? "zone-target " : "")
           }
         >
-          <div className="zonehead mono">
-            <span>SIGNAL</span>
-            <span className="zonehead-dim">what gets the sharpest version of you</span>
+          <div className="zonelabel">
+            <span className="zonelabel-index mono">01</span>
+            <span className="zonelabel-name">THE SIGNAL</span>
+            <span className="zonelabel-note">what actually moves things</span>
           </div>
+
           {state.signal.map((item, idx) => (
             <Row
               key={item.id}
@@ -325,22 +330,25 @@ export default function App() {
           ))}
           {state.signal.length < 3 &&
             Array.from({ length: 3 - state.signal.length }).map((_, i) => (
-              <div key={i} className="emptyslot">
-                <span className="slotnum mono">{state.signal.length + i + 1}</span>
-                <span className="mono slottext">open slot — promote what actually moves things</span>
+              <div key={i} className="emptyrow">
+                <span className="bignum bignum-ghost">
+                  {String(state.signal.length + i + 1).padStart(2, "0")}
+                </span>
+                <span className="emptynote">reserved — promote something worth it</span>
               </div>
             ))}
         </section>
 
-        {/* noise zone */}
+        {/* THE NOISE */}
         <section
           data-zone="noise"
-          className={"noisezone " + (dropHint?.list === "noise" ? "droptarget-noise" : "")}
+          className={"zone zone-noise " + (dropHint?.list === "noise" ? "zone-target-noise" : "")}
         >
-          <div className="zonehead mono">
-            <span className="zonehead-noise">NOISE</span>
-            <span className="zonehead-dim">
-              it can wait · <b>{state.noise.length}</b>
+          <div className="zonelabel">
+            <span className="zonelabel-index mono">02</span>
+            <span className="zonelabel-name zonelabel-name-dim">THE NOISE</span>
+            <span className="zonelabel-note">
+              real, urgent-looking, and still able to wait · {state.noise.length}
             </span>
           </div>
 
@@ -348,18 +356,18 @@ export default function App() {
             <input
               className="input"
               value={input}
-              placeholder="Everything lands here first…"
+              placeholder="Capture it here. Don't obey it."
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addItem()}
             />
-            <button className="addbtn" onClick={addItem}>
-              ADD
+            <button className="addbtn mono" onClick={addItem}>
+              CAPTURE ↵
             </button>
           </div>
 
           {state.noise.length === 0 && (
-            <div className="quiet mono">
-              Quiet. Capture asks, fires and "quick things" here — then decide.
+            <div className="quiet">
+              <em>Quiet.</em> Asks, fires and "quick things" land here first — then you decide.
             </div>
           )}
 
@@ -382,24 +390,30 @@ export default function App() {
           ))}
         </section>
 
-        {/* 7-day strip */}
-        <footer className="footer">
-          <div className="footlabel mono">LAST 7 DAYS</div>
-          <div className="striprow">
+        {/* THE RECORD */}
+        <footer className="zone zone-record">
+          <div className="zonelabel">
+            <span className="zonelabel-index mono">03</span>
+            <span className="zonelabel-name zonelabel-name-dim">THE RECORD</span>
+            <span className="zonelabel-note">last seven days</span>
+          </div>
+          <div className="record">
             {strip.map((d, i) => (
-              <div key={i} className="stripday" title={`${d.date}: ${d.done}/${d.total || 3}`}>
-                <div className="stripbars">
+              <div key={i} className="recday" title={`${d.date}: ${d.done}/${d.total || 3}`}>
+                <div className="recbars">
                   {[2, 1, 0].map((seg) => (
-                    <div key={seg} className={"stripseg " + (d.done > seg ? "stripseg-lit" : "")} />
+                    <div key={seg} className={"recseg " + (d.done > seg ? "recseg-lit" : "")} />
                   ))}
                 </div>
-                <div className={"stripdate mono " + (d.today ? "stripdate-today" : "")}>
-                  {d.today ? "now" : d.date.slice(5)}
+                <div className={"recdate mono " + (d.today ? "recdate-today" : "")}>
+                  {d.today ? "NOW" : d.date.slice(5)}
                 </div>
               </div>
             ))}
           </div>
         </footer>
+
+        <div className="colophon mono">SIG/NOISE — RUTHLESS PRIORITIZATION · {state.date}</div>
       </div>
 
       {drag && (
@@ -407,6 +421,26 @@ export default function App() {
           {drag.text}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+function Waveform({ cleared, allSet }) {
+  const bars = 48;
+  const litUntil = Math.round((cleared / 3) * bars);
+  return (
+    <div className="wave" aria-hidden="true">
+      {Array.from({ length: bars }).map((_, i) => {
+        const h = 8 + Math.abs(Math.sin(i * 1.7) * 26) + Math.abs(Math.sin(i * 0.4) * 10);
+        return (
+          <div
+            key={i}
+            className={"wavebar " + (i < litUntil ? "wavebar-lit " : "") + (allSet ? "wavebar-live" : "")}
+            style={{ height: h + "px", animationDelay: (i % 12) * 0.12 + "s" }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -432,14 +466,18 @@ function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPr
         ⠿
       </span>
 
-      {isSignal && <span className={"rankchip mono " + (item.done ? "rankchip-lit" : "")}>{rank}</span>}
+      {isSignal && (
+        <span className={"bignum " + (item.done ? "bignum-done" : "")}>
+          {String(rank).padStart(2, "0")}
+        </span>
+      )}
 
       <button
         onClick={() => onToggle(item.id)}
-        className={"check " + (item.done ? "check-on" : "")}
+        className={"check mono " + (item.done ? "check-on" : "")}
         aria-label={item.done ? "Mark not done" : "Mark done"}
       >
-        ✓
+        {item.done ? "DONE" : "MARK"}
       </button>
 
       {editing ? (
@@ -461,21 +499,21 @@ function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPr
           title="Tap to edit"
         >
           {item.text}
-          {item.carried && <span className="carried mono"> · carried over</span>}
+          {item.carried && <span className="carried mono"> · CARRIED</span>}
         </span>
       )}
 
       <div className="rowbtns">
         {isSignal ? (
-          <button className="minibtn" onClick={() => onDemote(item.id)} title="Back to noise">
-            ▾
+          <button className="minibtn mono" onClick={() => onDemote(item.id)} title="Back to noise">
+            ↓
           </button>
         ) : (
-          <button className="minibtn minibtn-up" onClick={() => onPromote(item.id)} title="Make it a signal">
-            ▴
+          <button className="minibtn mono minibtn-up" onClick={() => onPromote(item.id)} title="Make it a signal">
+            ↑
           </button>
         )}
-        <button className="minibtn minibtn-del" onClick={() => onRemove(item.id)} title="Delete">
+        <button className="minibtn mono minibtn-del" onClick={() => onRemove(item.id)} title="Delete">
           ×
         </button>
       </div>
