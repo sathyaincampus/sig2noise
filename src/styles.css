@@ -281,3 +281,12 @@ button:focus-visible, input:focus-visible, span:focus-visible { outline: 2px sol
 .shake { animation: shake 0.4s; }
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
 @media (prefers-reduced-motion: reduce) { .lamp-on, .shake { animation: none; } }
+
+/* ---------- inline edit ---------- */
+.text { cursor: text; }
+.editinput {
+  flex: 1; font-family: "Archivo", system-ui, sans-serif; color: var(--ink);
+  background: rgba(0, 0, 0, 0.25); border: 1px solid var(--amber);
+  border-radius: 6px; padding: 4px 8px; outline: none; min-width: 0;
+  box-shadow: 0 0 10px rgba(255, 178, 36, 0.12);
+}

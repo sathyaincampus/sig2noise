@@ -61,6 +61,7 @@ export default function App() {
   const [flash, setFlash] = useState(false);
   const [syncErr, setSyncErr] = useState(null); // string error code or null
   const [drag, setDrag] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const [dropHint, setDropHint] = useState(null);
   const saveTimer = useRef(null);
   const dragRef = useRef(null);
@@ -145,6 +146,17 @@ export default function App() {
       signal: s.signal.filter((i) => i.id !== id),
       noise: s.noise.filter((i) => i.id !== id),
     }));
+
+  const updateText = (id, text) => {
+    const t = text.trim();
+    if (t)
+      setState((s) => ({
+        ...s,
+        signal: s.signal.map((i) => (i.id === id ? { ...i, text: t } : i)),
+        noise: s.noise.map((i) => (i.id === id ? { ...i, text: t } : i)),
+      }));
+    setEditingId(null);
+  };
 
   const moveItem = useCallback((id, toList, toIndex) => {
     setState((s) => {
@@ -306,6 +318,9 @@ export default function App() {
               onRemove={removeItem}
               onDemote={demote}
               startDrag={startDrag}
+              editing={editingId === item.id}
+              onStartEdit={setEditingId}
+              onEdit={updateText}
             />
           ))}
           {state.signal.length < 3 &&
@@ -360,6 +375,9 @@ export default function App() {
               onRemove={removeItem}
               onPromote={promote}
               startDrag={startDrag}
+              editing={editingId === item.id}
+              onStartEdit={setEditingId}
+              onEdit={updateText}
             />
           ))}
         </section>
@@ -394,7 +412,7 @@ export default function App() {
 }
 
 /* ------------------------------------------------------------------ */
-function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPromote, onDemote, startDrag }) {
+function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPromote, onDemote, startDrag, editing, onStartEdit, onEdit }) {
   const isSignal = zone === "signal";
   return (
     <div
@@ -424,10 +442,28 @@ function Row({ item, index, zone, rank, dragging, hint, onToggle, onRemove, onPr
         ✓
       </button>
 
-      <span className={"text " + (isSignal ? "text-signal" : "text-noise")}>
-        {item.text}
-        {item.carried && <span className="carried mono"> · carried over</span>}
-      </span>
+      {editing ? (
+        <input
+          className={"editinput " + (isSignal ? "text-signal" : "text-noise")}
+          autoFocus
+          defaultValue={item.text}
+          onFocus={(e) => e.target.select()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onEdit(item.id, e.target.value);
+            if (e.key === "Escape") onEdit(item.id, item.text);
+          }}
+          onBlur={(e) => onEdit(item.id, e.target.value)}
+        />
+      ) : (
+        <span
+          className={"text " + (isSignal ? "text-signal" : "text-noise")}
+          onClick={() => onStartEdit(item.id)}
+          title="Tap to edit"
+        >
+          {item.text}
+          {item.carried && <span className="carried mono"> · carried over</span>}
+        </span>
+      )}
 
       <div className="rowbtns">
         {isSignal ? (
