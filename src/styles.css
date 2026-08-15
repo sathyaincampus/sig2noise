@@ -4,19 +4,19 @@
    Archivo (text) · IBM Plex Mono (utility)
    ================================================================ */
 :root {
-  --paper: #0b0c0e;
-  --ink: #ece9e2;        /* bone */
-  --ink-dim: #8b8b8b;
-  --ink-faint: #4d4f55;
-  --hairline: #232529;
-  --amber: #ffb224;
+  --paper: #f1eee7;      /* bone paper */
+  --ink: #141412;         /* near-black */
+  --ink-dim: #6f6c64;
+  --ink-faint: #a9a49a;
+  --hairline: #d9d4c9;
+  --amber: #e8930c;       /* deeper amber for light bg contrast */
   --amber-deep: #b87e00;
-  --red: #e4574b;
+  --red: #c4372b;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
-::selection { background: var(--amber); color: #0b0c0e; }
+::selection { background: var(--amber); color: #f1eee7; }
 
 body {
   background: var(--paper);
@@ -28,10 +28,10 @@ body {
 /* faint architectural grid + grain */
 body::before {
   content: ""; position: fixed; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent, transparent calc(25% - 1px), rgba(255,255,255,0.025) calc(25% - 1px), rgba(255,255,255,0.025) 25%);
+  background: repeating-linear-gradient(90deg, transparent, transparent calc(25% - 1px), rgba(0,0,0,0.03) calc(25% - 1px), rgba(0,0,0,0.03) 25%);
 }
 body::after {
-  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: 0.05;
+  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: 0.035;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.65'/%3E%3C/svg%3E");
 }
 
@@ -72,7 +72,7 @@ em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-s
 .linkbtn:hover { color: var(--amber); }
 
 .errbar {
-  font-size: 11px; color: #ffb8b0; line-height: 1.6;
+  font-size: 11px; color: var(--red); line-height: 1.6;
   border-bottom: 1px solid rgba(228, 87, 75, 0.4);
   padding: 12px 0;
 }
@@ -170,7 +170,7 @@ em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-s
 }
 .check:hover { border-color: var(--ink); color: var(--ink); }
 .check-on {
-  background: var(--amber); border-color: var(--amber); color: #0b0c0e; font-weight: 600;
+  background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 600;
 }
 
 .text { flex: 1; cursor: text; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
@@ -240,7 +240,7 @@ em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-s
   background: var(--paper); border: 1px solid var(--amber); color: var(--ink);
   padding: 8px 12px; font-size: 13px;
   max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 14px 40px rgba(20, 20, 18, 0.18);
 }
 
 /* ---------- misc ---------- */
